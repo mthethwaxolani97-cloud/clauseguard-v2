@@ -40,6 +40,7 @@ function timeAgo(iso: string): string {
   return Math.floor(s / 86400) + 'd ago';
 }
 
+function MonitorPageInner() {
 useEffect(() => {
     setMonitors(loadMonitors());
     const prePrompt = searchParams.get('prompt');
