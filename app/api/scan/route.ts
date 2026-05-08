@@ -1,0 +1,124 @@
+// app/api/scan/route.ts
+// This is the server-side scanner.
+// The Groq API key NEVER goes to the browser — it stays safely on the server.
+// This also bypasses CORS — the server fetches URLs that browsers can't.
+
+import { NextRequest, NextResponse } from 'next/server';
+
+const GROQ_MODELS = [
+  'llama-3.3-70b-versatile',
+    'llama3-70b-8192',
+      'mixtral-8x7b-32768',
+        'llama3-8b-8192',
+        ];
+
+        function extractTextFromHTML(html: string): string {
+          return html
+              .replace(/<script[\s\S]*?<\/script>/gi, '')
+                  .replace(/<style[\s\S]*?<\/style>/gi, '')
+                      .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+                          .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+                              .replace(/<header[\s\S]*?<\/header>/gi, '')
+                                  .replace(/<[^>]+>/g, ' ')
+                                      .replace(/\s{2,}/g, ' ')
+                                          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ')
+                                              .trim();
+                                              }
+
+                                              async function callGroq(prompt: string): Promise<string> {
+                                                const apiKey = process.env.GROQ_API_KEY;
+                                                  if (!apiKey) throw new Error('GROQ_API_KEY not set in environment');
+
+                                                    for (const model of GROQ_MODELS) {
+                                                        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                                                              method: 'POST',
+                                                                    headers: {
+                                                                            'Content-Type': 'application/json',
+                                                                                    'Authorization': `Bearer ${apiKey}`,
+                                                                                          },
+                                                                                                body: JSON.stringify({
+                                                                                                        model,
+                                                                                                                messages: [{ role: 'user', content: prompt }],
+                                                                                                                        temperature: 0.2,
+                                                                                                                                max_tokens: 1500,
+                                                                                                                                      }),
+                                                                                                                                          });
+                                                                                                                                              if (res.ok) {
+                                                                                                                                                    const data = await res.json();
+                                                                                                                                                          return data.choices?.[0]?.message?.content || '';
+                                                                                                                                                              }
+                                                                                                                                                                }
+                                                                                                                                                                  throw new Error('All Groq models failed. Check your GROQ_API_KEY.');
+                                                                                                                                                                  }
+
+                                                                                                                                                                  export async function POST(req: NextRequest) {
+                                                                                                                                                                    try {
+                                                                                                                                                                        const { url } = await req.json();
+                                                                                                                                                                            if (!url || !url.startsWith('http')) {
+                                                                                                                                                                                  return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
+                                                                                                                                                                                      }
+
+                                                                                                                                                                                          // Try to fetch the page content server-side (no CORS issues here)
+                                                                                                                                                                                              let textContent = '';
+                                                                                                                                                                                                  try {
+                                                                                                                                                                                                        const pageRes = await fetch(url, {
+                                                                                                                                                                                                                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ClauseGuard/2.0)' },
+                                                                                                                                                                                                                        signal: AbortSignal.timeout(10000),
+                                                                                                                                                                                                                              });
+                                                                                                                                                                                                                                    if (pageRes.ok) {
+                                                                                                                                                                                                                                            const html = await pageRes.text();
+                                                                                                                                                                                                                                                    textContent = extractTextFromHTML(html).slice(0, 6000);
+                                                                                                                                                                                                                                                          }
+                                                                                                                                                                                                                                                              } catch {
+                                                                                                                                                                                                                                                                    textContent = `[Could not fetch ${url} — analysing based on domain knowledge]`;
+                                                                                                                                                                                                                                                                        }
+
+                                                                                                                                                                                                                                                                            const domain = (() => {
+                                                                                                                                                                                                                                                                                  try { return new URL(url).hostname.replace('www.', ''); } catch { return url; }
+                                                                                                                                                                                                                                                                                      })();
+
+                                                                                                                                                                                                                                                                                          const prompt = `You are a legal risk analyser for ClauseGuard. Analyse this Terms & Conditions document.
+
+                                                                                                                                                                                                                                                                                          URL: ${url}
+                                                                                                                                                                                                                                                                                          Domain: ${domain}
+
+                                                                                                                                                                                                                                                                                          DOCUMENT TEXT (may be partial):
+                                                                                                                                                                                                                                                                                          ${textContent}
+
+                                                                                                                                                                                                                                                                                          Return ONLY valid JSON, no markdown, no explanation, exactly this structure:
+                                                                                                                                                                                                                                                                                          {
+                                                                                                                                                                                                                                                                                            "siteName": "Company/service name",
+                                                                                                                                                                                                                                                                                              "riskScore": <number 0-100, where 0=very safe, 100=extremely risky>,
+                                                                                                                                                                                                                                                                                                "summary": "2-3 sentence plain English summary of key risks for a regular person",
+                                                                                                                                                                                                                                                                                                  "verdict": "Safe" | "Moderate Risk" | "High Risk" | "Very Risky",
+                                                                                                                                                                                                                                                                                                    "clauses": [
+                                                                                                                                                                                                                                                                                                        {
+                                                                                                                                                                                                                                                                                                              "title": "Clause name",
+                                                                                                                                                                                                                                                                                                                    "severity": "high" | "medium" | "low",
+                                                                                                                                                                                                                                                                                                                          "explanation": "Plain English explanation of what this means for the user"
+                                                                                                                                                                                                                                                                                                                              }
+                                                                                                                                                                                                                                                                                                                                ]
+                                                                                                                                                                                                                                                                                                                                }
+
+                                                                                                                                                                                                                                                                                                                                Include 5-8 clauses covering: data collection, auto-renewal, arbitration, account termination, content ownership, liability limits, and any prop-firm-specific rules if relevant.`;
+
+                                                                                                                                                                                                                                                                                                                                    const rawText = await callGroq(prompt);
+                                                                                                                                                                                                                                                                                                                                        const cleaned = rawText.replace(/```json|```/g, '').trim();
+
+                                                                                                                                                                                                                                                                                                                                            try {
+                                                                                                                                                                                                                                                                                                                                                  const parsed = JSON.parse(cleaned);
+                                                                                                                                                                                                                                                                                                                                                        return NextResponse.json(parsed);
+                                                                                                                                                                                                                                                                                                                                                            } catch {
+                                                                                                                                                                                                                                                                                                                                                                  return NextResponse.json({
+                                                                                                                                                                                                                                                                                                                                                                          siteName: domain,
+                                                                                                                                                                                                                                                                                                                                                                                  riskScore: 50,
+                                                                                                                                                                                                                                                                                                                                                                                          summary: rawText.slice(0, 300) || 'Analysis completed.',
+                                                                                                                                                                                                                                                                                                                                                                                                  verdict: 'Moderate Risk',
+                                                                                                                                                                                                                                                                                                                                                                                                          clauses: [{ title: 'Analysis Note', severity: 'medium', explanation: rawText.slice(0, 200) }],
+                                                                                                                                                                                                                                                                                                                                                                                                                });
+                                                                                                                                                                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                                                                                                                                                                      } catch (err: unknown) {
+                                                                                                                                                                                                                                                                                                                                                                                                                          const message = err instanceof Error ? err.message : 'Unknown error';
+                                                                                                                                                                                                                                                                                                                                                                                                                              return NextResponse.json({ error: message }, { status: 500 });
+                                                                                                                                                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                                                                                                                                                }
