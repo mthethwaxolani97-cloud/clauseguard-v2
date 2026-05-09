@@ -17,17 +17,12 @@ export default function PropwatchPage() {
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
-    // FIX: Instant cache check prevents the modal blink
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsLoggedIn(!!session?.user);
-      setAuthChecked(true);
-      if (!session?.user) setShowModal(true);
-    });
-
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(!!session?.user);
+      const loggedIn = !!session?.user;
+      setIsLoggedIn(loggedIn);
       setAuthChecked(true);
-      if (!session?.user) setShowModal(true);
+      if (!loggedIn) setShowModal(true);
+      else setShowModal(false);
     });
 
     return () => listener.subscription.unsubscribe();
@@ -46,7 +41,7 @@ export default function PropwatchPage() {
     if (!isLoggedIn) { setShowModal(true); return; }
     const newState = !alerts[key];
     setAlerts(prev => ({ ...prev, [key]: newState }));
-    showToast(newState ? `✓ Alerts on for ${name}` : 'Alerts disabled');
+    showToast(newState ? `Alerts on for ${name}` : 'Alerts disabled');
   }
 
   function scanFirm(url: string) {
@@ -54,12 +49,13 @@ export default function PropwatchPage() {
   }
 
   function searchAnyFirm() {
-    if (!search) { showToast('⚠️ Type a firm name first'); return; }
+    if (!search) { showToast('Type a firm name first'); return; }
     if (!isLoggedIn) { setShowModal(true); return; }
     router.push('/monitor?prompt=' + encodeURIComponent('Monitor my ' + search + ' account'));
   }
 
-  const riskColor = (risk: number) => risk < 35 ? 'var(--safe)' : risk < 60 ? 'var(--warn)' : 'var(--danger)';
+  const riskColor = (risk: number) =>
+    risk < 35 ? 'var(--safe)' : risk < 60 ? 'var(--warn)' : 'var(--danger)';
 
   if (!authChecked) {
     return (
@@ -74,7 +70,11 @@ export default function PropwatchPage() {
 
   return (
     <>
-      {showModal && <PremiumModal onClose={() => setShowModal(false)} />}
+      {showModal && <PremiumModal onClose={() => {
+        if (!isLoggedIn) router.push('/login');
+        else setShowModal(false);
+      }} />}
+
       <div className="propwatch-layout" style={{ filter: !isLoggedIn ? 'blur(3px)' : 'none', pointerEvents: !isLoggedIn ? 'none' : 'auto', userSelect: !isLoggedIn ? 'none' : 'auto', transition: 'filter 0.3s ease' }}>
         <div className="propwatch-header">
           <div className="propwatch-badge">⚡ PropWatch Module</div>
@@ -90,9 +90,11 @@ export default function PropwatchPage() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
-              {search && <button className="propwatch-search-clear" onClick={() => setSearch('')}>✕</button>}
+              {search && <button className="propwatch-search-clear" onClick={() => setSearch('')}>X</button>}
             </div>
-            <button className="btn btn-accent" onClick={searchAnyFirm} style={{ whiteSpace: 'nowrap' }}>🌍 Any Firm →</button>
+            <button className="btn btn-accent" onClick={searchAnyFirm} style={{ whiteSpace: 'nowrap' }}>
+              🌍 Any Firm →
+            </button>
           </div>
           <div className="propwatch-count">
             {search ? `${filtered.length} firm${filtered.length !== 1 ? 's' : ''} match "${search}"` : `Showing all ${PROP_FIRMS.length} pre-loaded firms`}
@@ -102,15 +104,9 @@ export default function PropwatchPage() {
         {filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 24px' }}>
             <div style={{ fontSize: 40, marginBottom: 16 }}>🔍</div>
-            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
-              No firms match &ldquo;{search}&rdquo;
-            </div>
-            <p style={{ fontSize: 14, color: 'var(--ink-muted)', marginBottom: 20 }}>
-              You can still monitor any firm in the world.
-            </p>
-            <button className="btn btn-accent" onClick={searchAnyFirm}>
-              🌍 Monitor &ldquo;{search}&rdquo; →
-            </button>
+            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 700, marginBottom: 8 }}>No firms match {search}</div>
+            <p style={{ fontSize: 14, color: 'var(--ink-muted)', marginBottom: 20 }}>You can still monitor any firm in the world.</p>
+            <button className="btn btn-accent" onClick={searchAnyFirm}>🌍 Monitor {search} →</button>
           </div>
         ) : (
           <div className="firms-grid">
@@ -124,17 +120,12 @@ export default function PropwatchPage() {
                   <div className="firm-meta-row"><span className="firm-meta-label">Drawdown</span><span className="firm-meta-val">{firm.drawdown}</span></div>
                   <div className="firm-meta-row"><span className="firm-meta-label">Payout</span><span className="firm-meta-val">{firm.payout}</span></div>
                   <div className="firm-meta-row"><span className="firm-meta-label">News trading</span><span className="firm-meta-val">{firm.news}</span></div>
-                  <div className="firm-meta-row">
-                    <span className="firm-meta-label">Risk score</span>
-                    <span className="firm-meta-val" style={{ color: riskColor(firm.risk), fontWeight: 700 }}>{firm.risk}/100</span>
-                  </div>
+                  <div className="firm-meta-row"><span className="firm-meta-label">Risk score</span><span className="firm-meta-val" style={{ color: riskColor(firm.risk), fontWeight: 700 }}>{firm.risk}/100</span></div>
                 </div>
                 <div className="firm-card-footer">
                   <span className="firm-card-update">Updated {firm.updated}</span>
                   <button className="firm-alert-toggle" onClick={e => { e.stopPropagation(); toggleAlert(firm.key, firm.name); }}>
-                    <div className={`toggle-switch${alerts[firm.key] ? ' on' : ''}`}>
-                      <div className="toggle-knob" />
-                    </div>
+                    <div className={`toggle-switch${alerts[firm.key] ? ' on' : ''}`}><div className="toggle-knob" /></div>
                     Alerts
                   </button>
                 </div>
@@ -143,11 +134,13 @@ export default function PropwatchPage() {
           </div>
         )}
       </div>
+
       <footer>
         <div className="footer-logo">ClauseGuard</div>
-        <div>PropWatch — 14 firms monitored</div>
+        <div>PropWatch — {PROP_FIRMS.length} firms monitored</div>
         <div className="footer-links" />
       </footer>
+
       <div className={`toast${toast ? ' show' : ''}`}>{toast}</div>
     </>
   );

@@ -11,7 +11,7 @@ interface PremiumModalProps {
     const router = useRouter();
 
       function handleCTA() {
-          router.push('/login');
+          router.push('/pricing');
             }
 
               return (

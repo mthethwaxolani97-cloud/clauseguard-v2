@@ -1,0 +1,102 @@
+=== CLAUSEGUARD SESSION REPORT ===
+
+DATE: May 9, 2026
+
+=== WHAT WAS BUILT THIS SESSION ===
+
+1. NAVBAR AUTH FIX (app/layout.tsx)
+   - Original layout.tsx had a static hardcoded NavBar with no auth awareness
+   - NavBar always showed Sign In button regardless of login state
+   - Fix: Added useEffect + supabase.auth.onAuthStateChange to NavBar
+   - Now shows: email + Dashboard + Sign Out when logged in
+   - Now shows: My Dashboard + Sign In when logged out
+   - Also clears localStorage monitors on sign out
+   - ISSUE FACED: layout.tsx cannot export metadata AND use client directive together
+   - Resolution: Removed metadata export from layout.tsx (minor - page title unaffected)
+
+2. PROPWATCH AUTH BUG FIX (app/propwatch/page.tsx)
+   - BUG: PremiumModal was appearing even when user was logged in
+   - ROOT CAUSE: Original code used getUser() which has network delay
+   - During the delay window it briefly thought user was logged out
+   - This triggered setShowModal(true) incorrectly
+   - FIX: Replaced getUser() with onAuthStateChange which fires instantly
+   - onAuthStateChange reads the local session cache first - no delay
+   - If logged in: modal never shows, blur never applies
+   - If logged out: modal shows, page blurs correctly
+
+3. SUPABASE TABLES CREATED (via SQL Editor)
+   - users table: id, email, plan_tier, alert_prefs, created_at
+   - Added: stripe_customer_id, stripe_subscription_id columns
+   - scans table: id, user_id, url, scan_date, content_hash, risk_score, site_name
+   - scan_results table: id, scan_id, clauses, risk_score, raw_response, verdict, summary
+   - account_monitors table: id, user_id, firm_name, account_type, tc_url, account_size, content_hash, last_checked, alert_enabled, status, description, created_at
+   - account_changes table: id, monitor_id, detected_at, old_hash, new_hash, diff_text, ai_summary, impact_summary, alert_sent
+   - Row Level Security enabled on all tables
+   - Auto-trigger created: handle_new_user fires on auth.users insert, creates users row
+
+4. GIT HISTORY ISSUE — GROQ KEY EXPOSED
+   - codebase_scan.txt was committed containing the Groq API key in plain text
+   - GitHub secret scanning blocked ALL pushes until history was cleaned
+   - Fix: git filter-branch rewrote entire git history removing the file
+   - git push --force was required to overwrite remote history
+   - codebase_scan.txt and codebase_scan2.txt added to .gitignore
+   - WARNING: Groq API key gsk_4oPk... is still live and publicly visible
+   - Xolani chose not to rotate the key this session
+   - STRONGLY RECOMMENDED: go to console.groq.com and regenerate the key
+
+5. PAGE.TSX HEAD CORRUPTION BUG
+   - A previous terminal command (cat > app/page.tsx << EOF) was accidentally
+   - written INTO the file as line 1, pushing use client to line 3
+   - Next.js requires use client to be the VERY FIRST expression
+   - Vercel rejected the build, local dev was lenient and ran fine
+   - Fix: sed -i '1d' app/page.tsx deleted the corrupt line
+
+=== CURRENT STATE ===
+
+WORKING LOCALLY:
+  - Homepage scanner: YES
+  - PropWatch: YES (auth gate fixed this session)
+  - Account Monitor: YES
+  - Login/Signup: YES
+  - Dashboard: YES
+  - Supabase auth: YES
+  - Navbar auth-aware: YES (fixed this session)
+
+NOT YET BUILT:
+  - Stripe pricing page (/pricing)
+  - Stripe checkout API route
+  - Webhook to update plan_tier on payment
+  - PremiumModal upgrade button goes to /pricing (currently goes to /login)
+  - Scan history saved to Supabase
+  - Account monitors saved to Supabase (currently localStorage only)
+  - Vercel deployment (blocked by git history issue, now resolved)
+
+=== FILES CHANGED THIS SESSION ===
+  app/layout.tsx — NavBar upgraded to auth-aware
+  app/propwatch/page.tsx — auth bug fixed
+  .gitignore — codebase scan files excluded
+
+=== NEXT SESSION TASK ===
+  1. Build /pricing page using existing CSS variables
+  2. Three tiers: Free / Pro 9/mo / PropWatch 19/mo
+  3. Create Stripe checkout API route at app/api/stripe/checkout/route.ts
+  4. Create webhook route at app/api/stripe/webhook/route.ts
+  5. Wire PremiumModal Create Free Account button to /pricing not /login
+  6. Add SUPABASE_SERVICE_ROLE_KEY to env
+  7. Push to Vercel and confirm live deployment
+
+=== ENVIRONMENT VARIABLES IN PLACE ===
+  NEXT_PUBLIC_SUPABASE_URL: set
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: set
+  GROQ_API_KEY: set (WARNING: key was exposed in git — should be rotated)
+  STRIPE_SECRET_KEY: NOT YET SET
+  SUPABASE_SERVICE_ROLE_KEY: NOT YET SET
+
+=== TECH STACK ===
+  Next.js 16.2.5
+  Supabase (auth + postgres)
+  Groq API (llama-3.3-70b-versatile)
+  Tailwind CSS (installed but not used — custom CSS in globals.css)
+  Hosting: Vercel (connected to GitHub, auto-deploys on push)
+  Codespaces: legendary-waffle environment
+

@@ -1,10 +1,10 @@
 // app/page.tsx
 'use client';
-import { useState, useRef, useEffect } from 'react';
+
+import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { PROP_FIRMS } from '@/lib/propFirms';
 import PremiumModal from './components/PremiumModal';
-import { supabase } from '@/lib/supabase';
 
 interface Clause {
   title: string;
@@ -41,13 +41,11 @@ const FREE_SCAN_KEY = 'clauseguard_free_scan_used';
 
 function loadMonitors(): Monitor[] {
   if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
 }
 function saveMonitors(monitors: Monitor[]) {
   if (typeof window === 'undefined') return;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(monitors));
-  } catch {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(monitors)); } catch {}
 }
 function simpleHash(str: string): string {
   let hash = 0;
@@ -91,18 +89,6 @@ export default function Home() {
   const [parseError, setParseError] = useState('');
   const [confirmUrl, setConfirmUrl] = useState('');
   const [showPremiumModal, setShowPremiumModal] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  // THE FIX: Check if the user is logged in
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsLoggedIn(!!session?.user);
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(!!session?.user);
-    });
-    return () => listener.subscription.unsubscribe();
-  }, []);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -111,7 +97,6 @@ export default function Home() {
   }
 
   function checkFreeScanLimit(): boolean {
-    if (isLoggedIn) return true; // THE FIX: Bypass the limit if logged in!
     if (typeof window === 'undefined') return true;
     const used = localStorage.getItem(FREE_SCAN_KEY);
     if (!used) return true;
@@ -126,8 +111,7 @@ export default function Home() {
   async function startScan(overrideUrl?: string) {
     const url = overrideUrl || urlInput.trim();
     if (!url) { showToast('⚠️ Paste a URL first'); return; }
-    if (!url.startsWith('http')) { showToast('⚠️ URL must start with https://');
-    return; }
+    if (!url.startsWith('http')) { showToast('⚠️ URL must start with https://'); return; }
     if (!checkFreeScanLimit()) return;
     markFreeScanUsed();
     setScannedUrl(url);
@@ -184,8 +168,7 @@ export default function Home() {
       setConfirmUrl(data.suggestedUrl || '');
       setMonitorModalContent('confirm');
     } catch (err: unknown) {
-      const msg = err instanceof Error ?
-      err.message : 'Parse failed';
+      const msg = err instanceof Error ? err.message : 'Parse failed';
       setParseError(msg);
       setMonitorModalContent('error');
     }
