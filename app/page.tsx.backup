@@ -4,8 +4,8 @@
 import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { PROP_FIRMS } from '@/lib/propFirms';
-import PremiumModal from './components/PremiumModal';
 
+// ─── Types ───────────────────────────────────────────────
 interface Clause {
   title: string;
   severity: 'high' | 'medium' | 'low';
@@ -32,12 +32,12 @@ interface Monitor {
   snapshotHash: string | null;
 }
 
+// ─── Screen types ─────────────────────────────────────────
 type Screen = 'landing' | 'loading' | 'results';
 type ScanTab = 'url' | 'propwatch' | 'monitor-quick';
 type ResultTab = 'summary' | 'redflags' | 'allclauses';
 
 const STORAGE_KEY = 'clauseguard_monitors_v2';
-const FREE_SCAN_KEY = 'clauseguard_free_scan_used';
 
 function loadMonitors(): Monitor[] {
   if (typeof window === 'undefined') return [];
@@ -63,6 +63,7 @@ function timeAgo(iso: string): string {
   return Math.floor(s / 86400) + 'd ago';
 }
 
+// ─── Loading steps ────────────────────────────────────────
 const STEPS = [
   'Fetching document...',
   'Extracting text content...',
@@ -81,6 +82,8 @@ export default function Home() {
   const [loadingStep, setLoadingStep] = useState(0);
   const [toast, setToast] = useState('');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Monitor state
   const [monitors, setMonitors] = useState<Monitor[]>(loadMonitors);
   const [monitorPrompt, setMonitorPrompt] = useState('');
   const [showMonitorModal, setShowMonitorModal] = useState(false);
@@ -88,7 +91,6 @@ export default function Home() {
   const [parsedMonitor, setParsedMonitor] = useState<Partial<Monitor> & { suggestedUrl?: string } | null>(null);
   const [parseError, setParseError] = useState('');
   const [confirmUrl, setConfirmUrl] = useState('');
-  const [showPremiumModal, setShowPremiumModal] = useState(false);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -96,42 +98,34 @@ export default function Home() {
     toastTimer.current = setTimeout(() => setToast(''), 3500);
   }
 
-  function checkFreeScanLimit(): boolean {
-    if (typeof window === 'undefined') return true;
-    const used = localStorage.getItem(FREE_SCAN_KEY);
-    if (!used) return true;
-    setShowPremiumModal(true);
-    return false;
-  }
-
-  function markFreeScanUsed() {
-    if (typeof window !== 'undefined') localStorage.setItem(FREE_SCAN_KEY, '1');
-  }
-
+  // ─── Scan ───────────────────────────────────────────────
   async function startScan(overrideUrl?: string) {
     const url = overrideUrl || urlInput.trim();
     if (!url) { showToast('⚠️ Paste a URL first'); return; }
     if (!url.startsWith('http')) { showToast('⚠️ URL must start with https://'); return; }
-    if (!checkFreeScanLimit()) return;
-    markFreeScanUsed();
+
     setScannedUrl(url);
     setScreen('loading');
     setLoadingStep(0);
+
     try {
       setLoadingStep(1);
       await new Promise(r => setTimeout(r, 800));
       setLoadingStep(2);
       await new Promise(r => setTimeout(r, 600));
       setLoadingStep(3);
+
       const res = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
+
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || 'Scan failed');
       }
+
       setLoadingStep(4);
       await new Promise(r => setTimeout(r, 400));
       const data: ScanResult = await res.json();
@@ -150,11 +144,13 @@ export default function Home() {
     if (firm) { setUrlInput(firm.url); await startScan(firm.url); }
   }
 
+  // ─── Monitor setup ──────────────────────────────────────
   async function handleAddMonitor() {
     if (!monitorPrompt.trim()) { showToast('⚠️ Describe your account first'); return; }
     setShowMonitorModal(true);
     setMonitorModalContent('parsing');
     setConfirmUrl('');
+
     try {
       const res = await fetch('/api/monitor-parse', {
         method: 'POST',
@@ -205,10 +201,12 @@ export default function Home() {
     showToast('✓ Pre-filled — hit Set Up Monitor to save it');
   }
 
+  // ─── Gauge ──────────────────────────────────────────────
   const score = scanResult?.riskScore ?? 0;
   const gaugeOffset = 283 - (283 * score / 100);
   const gaugeColor = score < 35 ? '#166534' : score < 60 ? '#B45309' : '#991B1B';
 
+  // ─── Render ─────────────────────────────────────────────
   if (screen === 'loading') {
     return (
       <div className="loading-screen">
@@ -244,9 +242,11 @@ export default function Home() {
     const clauses = scanResult.clauses || [];
     const highRisk = clauses.filter(c => c.severity === 'high').length;
     const domain = (() => { try { return new URL(scannedUrl).hostname.replace('www.', ''); } catch { return scannedUrl; } })();
+
     return (
       <>
         <div className="results-layout">
+          {/* Score card */}
           <div className="score-card">
             <div className="score-domain">{domain}</div>
             <div className="score-site-name">{scanResult.siteName}</div>
@@ -279,9 +279,10 @@ export default function Home() {
             <div className="score-actions">
               <button className="btn btn-accent" style={{ width: '100%', justifyContent: 'center' }} onClick={monitorCurrentScan}>🛡 Monitor This Site</button>
               <button className="btn btn-ghost" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setScreen('landing')}>← New Scan</button>
-              <button className="btn btn-ghost" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setShowPremiumModal(true)}>🔔 Set Up Alerts</button>
             </div>
           </div>
+
+          {/* Results main */}
           <div className="results-main">
             <div className="results-header">
               <button className="results-back" onClick={() => setScreen('landing')}>← Back to scanner</button>
@@ -294,6 +295,7 @@ export default function Home() {
                 </button>
               ))}
             </div>
+
             {resultTab === 'summary' && (
               <div>
                 <div className="summary-card">
@@ -324,12 +326,13 @@ export default function Home() {
             )}
           </div>
         </div>
-        {showPremiumModal && <PremiumModal onClose={() => setShowPremiumModal(false)} />}
+
         <Toast message={toast} />
       </>
     );
   }
 
+  // ─── Landing ────────────────────────────────────────────
   return (
     <>
       <div id="screen-landing">
@@ -343,9 +346,11 @@ export default function Home() {
               The fine print is trying<br />to <em>own</em> you.
             </h1>
             <p className="hero-sub fade-up-3">
-              ClauseGuard reads Terms &amp; Conditions so you don't have to. Instant risk analysis. Real-time alerts when rules change. Built for prop firm traders and everyone who clicks &ldquo;I Agree.&rdquo;
+              ClauseGuard reads Terms &amp; Conditions so you don't have to. Instant risk analysis. Real-time alerts when rules change. Built for prop firm traders and everyone who clicks "I Agree."
             </p>
+
             <div className="scan-box fade-up-4">
+              {/* Tabs */}
               <div className="scan-tabs">
                 {(['url', 'propwatch', 'monitor-quick'] as ScanTab[]).map(tab => (
                   <button key={tab} className={`scan-tab${scanTab === tab ? ' active' : ''}`} onClick={() => setScanTab(tab)}>
@@ -353,6 +358,8 @@ export default function Home() {
                   </button>
                 ))}
               </div>
+
+              {/* URL panel */}
               <div className={`scan-panel${scanTab === 'url' ? ' active' : ''}`}>
                 <div className="url-input-wrap">
                   <input
@@ -385,6 +392,8 @@ export default function Home() {
                   ))}
                 </div>
               </div>
+
+              {/* PropWatch quick panel */}
               <div className={`scan-panel${scanTab === 'propwatch' ? ' active' : ''}`}>
                 <div className="propwatch-grid">
                   {PROP_FIRMS.slice(0, 8).map(firm => (
@@ -405,6 +414,8 @@ export default function Home() {
                   Analyse Selected Firm →
                 </button>
               </div>
+
+              {/* Monitor quick panel */}
               <div className={`scan-panel${scanTab === 'monitor-quick' ? ' active' : ''}`}>
                 <div className="monitor-quick-intro">
                   <div className="monitor-quick-icon">🛡️</div>
@@ -434,6 +445,7 @@ export default function Home() {
                 </button>
               </div>
             </div>
+
             <div className="social-proof">
               <div className="proof-item"><span className="proof-icon">🛡️</span> 94% of people never read T&Cs</div>
               <div className="proof-item"><span className="proof-icon">⚠️</span> Prop firms change rules mid-challenge</div>
@@ -441,6 +453,7 @@ export default function Home() {
             </div>
           </div>
         </section>
+
         <div className="features-strip">
           <div className="feature-item">
             <div className="feature-icon">🔍</div>
@@ -458,6 +471,7 @@ export default function Home() {
             <div className="feature-desc">14+ prop firms pre-indexed. Know before your $100k account gets blindsided.</div>
           </div>
         </div>
+
         <footer>
           <div className="footer-logo">ClauseGuard</div>
           <div>v2.1 Phase 2 — Next.js + Supabase — Groq AI</div>
@@ -468,6 +482,7 @@ export default function Home() {
         </footer>
       </div>
 
+      {/* Monitor Setup Modal */}
       {showMonitorModal && (
         <div className="modal-overlay" onClick={() => setShowMonitorModal(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -494,7 +509,7 @@ export default function Home() {
                     <div className="parsed-row"><span className="parsed-label">Account Type</span><span className="parsed-val">{parsedMonitor.accountType}</span></div>
                     <div className="parsed-row"><span className="parsed-label">Account Size</span><span className="parsed-val">{parsedMonitor.accountSize}</span></div>
                     <div className="parsed-row" style={{ flexDirection: 'column', gap: 6 }}>
-                      <span className="parsed-label">T&amp;C URL</span>
+                      <span className="parsed-label">T&C URL</span>
                       <input
                         type="text"
                         className="url-input"
@@ -519,7 +534,7 @@ export default function Home() {
                     <div style={{ fontWeight: 700, color: 'var(--danger)', marginBottom: 6 }}>Could not parse your request</div>
                     <div style={{ fontSize: 13, color: '#7F1D1D' }}>{parseError}</div>
                   </div>
-                  <p style={{ fontSize: 13, color: 'var(--ink-muted)' }}>Try being more specific, e.g. &ldquo;Monitor my FTMO Standard Challenge $10,000 account&rdquo;</p>
+                  <p style={{ fontSize: 13, color: 'var(--ink-muted)' }}>Try being more specific, e.g. "Monitor my FTMO Standard Challenge $10,000 account"</p>
                 </div>
                 <div className="setup-actions">
                   <button className="btn btn-ghost" onClick={() => setShowMonitorModal(false)}>Close</button>
@@ -530,12 +545,12 @@ export default function Home() {
         </div>
       )}
 
-      {showPremiumModal && <PremiumModal onClose={() => setShowPremiumModal(false)} />}
       <Toast message={toast} />
     </>
   );
 }
 
+// ─── Sub-components ───────────────────────────────────────
 function ClauseCard({ clause }: { clause: Clause }) {
   return (
     <div className={`clause-card risk-${clause.severity}`}>
